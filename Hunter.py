@@ -6,7 +6,7 @@ import time
 
 # === CONFIGURACIÓN GLOBAL ===
 # Consigue tu API KEY en https://account.shodan.io
-SHODAN_API_KEY = "TU_API_KEY_AQUI"
+SHODAN_API_KEY = "iOPBaHwvZWxXzvuwagvGnb0i1vidaf2s"
 api = shodan.Shodan(SHODAN_API_KEY)
 
 # Palabras clave de alto valor (Finanzas, Leaks, Privacidad)
