@@ -5,7 +5,7 @@ import os
 import time
 
 # === CREDENCIALES ===
-SHODAN_API_KEY = "TU_API_KEY_AQUI"
+SHODAN_API_KEY = "iOPBaHwvZWxXzvuwagvGnb0i1vidaf2s"
 api = shodan.Shodan(SHODAN_API_KEY)
 
 # === DICCIONARIOS DE ALTO VALOR ===
