@@ -1,4 +1,4 @@
-iimport telebot
+import telebot
 from telebot import types
 import netlas, requests, os, time, socket, sqlite3
 from datetime import datetime, timedelta
