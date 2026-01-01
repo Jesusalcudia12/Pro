@@ -278,23 +278,35 @@ def pendientes(message):
 
 @bot.message_handler(commands=['combos'])
 def cmd_combos(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Botones para generar búsquedas automáticas
+    btn1 = types.InlineKeyboardButton("🔍 Buscar Combos Gmail (TXT)", callback_data="dork_1")
+    btn2 = types.InlineKeyboardButton("🔍 Buscar Logs en Pastebin", callback_data="dork_2")
+    btn3 = types.InlineKeyboardButton("🔍 Buscar Dumps SQL", callback_data="dork_3")
+    btn4 = types.InlineKeyboardButton("🔍 Buscar Archivos .ENV", callback_data="dork_4")
+    markup.add(btn1, btn2, btn3, btn4)
+
     texto_combos = (
         "🎯 *CENTRO DE INTELIGENCIA DE COMBOS & LOGS*\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "🔍 *Dorks para Google (Copiar y Pegar):*\n"
-        "1️⃣ `filetype:txt \"@gmail.com:\" password` (Busca combos en TXT)\n"
-        "2️⃣ `site:pastebin.com \"@gmail.com\" pass` (Logs en Pastebin)\n"
-        "3️⃣ `intitle:\"index of\" \"combo.txt\"` (Directorios expuestos)\n"
-        "4️⃣ `filetype:env \"DB_PASSWORD\"` (Credenciales de bases de datos)\n"
-        "5️⃣ `filetype:sql \"INSERT INTO\" \"users\" \"password\"` (Dumps de DB)\n\n"
-        "🌐 *Fuentes Gratuitas (Deep Web & Surface):*\n"
-        "• *BreachForums / Sinful:* (Requiere Tor/VPN)\n"
-        "• *Telegram Channels:* Busca 'Logs/Combo Cloud' en el buscador global.\n"
-        "• *Pastebin / Ghostbin:* Monitoreo de texto plano.\n"
-        "• *Datalifters:* Repositorios de brechas antiguas.\n\n"
-        "⚠️ *Aviso:* El uso de combos para acceso no autorizado es ilegal. Use para auditoría de seguridad."
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Seleccione una categoría para generar un enlace de búsqueda OSINT directo en Google:"
     )
-    bot.send_message(message.chat.id, texto_combos, parse_mode="Markdown")
+    bot.send_message(message.chat.id, texto_combos, parse_mode="Markdown", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('dork_'))
+def callback_dorks(call):
+    base_url = "https://www.google.com/search?q="
+    dorks = {
+        "dork_1": "filetype:txt \"@gmail.com:\" password",
+        "dork_2": "site:pastebin.com \"@gmail.com\" pass",
+        "dork_3": "filetype:sql \"INSERT INTO\" \"users\" \"password\"",
+        "dork_4": "filetype:env \"DB_PASSWORD\""
+    }
+    query = quote(dorks[call.data])
+    link = base_url + query
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, f"🚀 *Enlace Generado:*\n\n[CLIC AQUÍ PARA BUSCAR REAL]({link})", parse_mode="Markdown")
     
 @bot.message_handler(commands=['exploit'])
 def cmd_exploit(message):
