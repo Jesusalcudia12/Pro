@@ -107,7 +107,21 @@ def generar_pdf_profesional(target, contenido, titulo_doc):
     return path
 
 # === FUNCIONES DE RECONOCIMIENTO REAL ===
-
+# --- FUNCIÓN DE BÚSQUEDA REAL EN LA NVD (NIST) ---
+def buscar_cves_reales(tecnologia):
+    # La API de NIST permite buscar vulnerabilidades por palabras clave
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={tecnologia}"
+    try:
+        response = requests.get(url, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            vulnerabilidades = data.get('vulnerabilities', [])
+            return vulnerabilidades
+        return None
+    except Exception as e:
+        print(f"Error consultando NIST: {e}")
+        return None
+        
 def exec_nmap_pro(target, mode="standard"):
     # Comandos reales del sistema
     if mode == "deep":
@@ -262,13 +276,78 @@ def pendientes(message):
     else:
         bot.send_message(message.chat.id, "✅ No hay deudas pendientes.")
 
-@bot.message_handler(commands=['combos', 'exploit'])
-def extra_functions(message):
-    if "/combos" in message.text:
-        bot.send_message(message.chat.id, "🎯 *Dorks de Combos Reales:* \n`filetype:env \"DB_PASSWORD\"` \n`\"@gmail.com\" : \"password\" filetype:log`", parse_mode="Markdown")
-    else:
-        bot.send_message(message.chat.id, "🛡️ Ingrese tecnología para buscar CVE real en NIST:")
-        bot.register_next_step_handler(message, lambda m: bot.send_message(m.chat.id, f"🔎 Consultando NIST para {m.text}..."))
+@bot.message_handler(commands=['combos'])
+def cmd_combos(message):
+    texto_combos = (
+        "🎯 *CENTRO DE INTELIGENCIA DE COMBOS & LOGS*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🔍 *Dorks para Google (Copiar y Pegar):*\n"
+        "1️⃣ `filetype:txt \"@gmail.com:\" password` (Busca combos en TXT)\n"
+        "2️⃣ `site:pastebin.com \"@gmail.com\" pass` (Logs en Pastebin)\n"
+        "3️⃣ `intitle:\"index of\" \"combo.txt\"` (Directorios expuestos)\n"
+        "4️⃣ `filetype:env \"DB_PASSWORD\"` (Credenciales de bases de datos)\n"
+        "5️⃣ `filetype:sql \"INSERT INTO\" \"users\" \"password\"` (Dumps de DB)\n\n"
+        "🌐 *Fuentes Gratuitas (Deep Web & Surface):*\n"
+        "• *BreachForums / Sinful:* (Requiere Tor/VPN)\n"
+        "• *Telegram Channels:* Busca 'Logs/Combo Cloud' en el buscador global.\n"
+        "• *Pastebin / Ghostbin:* Monitoreo de texto plano.\n"
+        "• *Datalifters:* Repositorios de brechas antiguas.\n\n"
+        "⚠️ *Aviso:* El uso de combos para acceso no autorizado es ilegal. Use para auditoría de seguridad."
+    )
+    bot.send_message(message.chat.id, texto_combos, parse_mode="Markdown")
+    
+@bot.message_handler(commands=['exploit'])
+def cmd_exploit(message):
+    msg = bot.reply_to(message, "🛡️ *MODO CVE:* Ingrese la tecnología o software (ej: `Apache 2.4.49` o `WordPress`):", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, procesar_busqueda_exploit)
+
+def procesar_busqueda_exploit(message):
+    tech = message.text
+    bot.send_message(message.chat.id, f"🔎 Consultando base de datos NIST para: `{tech}`...", parse_mode="Markdown")
+    
+    hallazgos = buscar_cves_reales(tech)
+    
+    if not hallazgos:
+        bot.send_message(message.chat.id, "❌ No se encontraron vulnerabilidades registradas para esa tecnología.")
+        return
+
+    # Construir contenido para el PDF y el mensaje
+    reporte_texto = f"INFORME DE VULNERABILIDADES PARA: {tech}\n"
+    reporte_texto += "="*50 + "\n\n"
+    
+    for v in hallazgos[:8]:  # Limitamos a los 8 exploits más recientes
+        cve_id = v['cve']['id']
+        descripcion = v['cve']['descriptions'][0]['value']
+        # Intentamos obtener la métrica de severidad (CVSS)
+        try:
+            score = v['cve']['metrics']['cvssMetricV31'][0]['cvssData']['baseScore']
+            nivel = v['cve']['metrics']['cvssMetricV31'][0]['cvssData']['baseSeverity']
+        except:
+            score = "N/A"
+            nivel = "DESCONOCIDO"
+            
+        reporte_texto += f"ID: {cve_id} | SCORE: {score} ({nivel})\n"
+        reporte_texto += f"DESCRIPCIÓN: {descripcion[:200]}...\n"
+        reporte_texto += f"MÁS INFO: https://nvd.nist.gov/vuln/detail/{cve_id}\n"
+        reporte_texto += "-"*50 + "\n"
+
+    # Generar PDF Profesional
+    pdf = ZenithPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "REPORTE TÉCNICO DE EXPLOITS Y CVE", ln=True)
+    pdf.set_font("Arial", size=9)
+    pdf.multi_cell(0, 6, txt=reporte_texto)
+    
+    nombre_archivo = f"Exploits_{tech.replace(' ', '_')}.pdf"
+    pdf.output(nombre_archivo)
+    
+    # Enviar al usuario
+    with open(nombre_archivo, "rb") as f:
+        bot.send_document(message.chat.id, f, caption=f"☢️ Hallazgos de seguridad para `{tech}`.")
+    
+    os.remove(nombre_archivo)
+    log_operacion("exploit_search", tech) # Registro en tu base de datos zenith_master.db   
 
 @bot.message_handler(commands=['status'])
 def status_check(message):
