@@ -1,69 +1,85 @@
-import netlas
 import shodan
-import urllib.parse
+import netlas
+import requests
 import os
 import time
+from datetime import datetime, timedelta
 
 # === CONFIGURACIÓN DE LLAVES ===
-NETLAS_API_KEY = "MheJyCwplJnLO8CU1ZOC7A7OkJFTYvnk"
 SHODAN_API_KEY = "iOPBaHwvZWxXzvuwagvGnb0i1vidaf2s"
+NETLAS_API_KEY = "MheJyCwplJnLO8CU1ZOC7A7OkJFTYvnk"
+TELEGRAM_TOKEN = "8583960709:AAGMxsIwVzlVUu-YvSn6Rfxn3-2Vfe-T3WU"
+TELEGRAM_CHAT_ID = "6280594821"
 
-def hunter_netlas_wallets():
-    print("\n[+] 🔎 Iniciando Rastreo Automatizado en Netlas (Buscando Wallets)...")
-    try:
-        n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
-        
-        # Query potente: Busca protocolos de base de datos que mencionen 'wallet' en su estructura
-        # y que NO requieran autenticación.
-        query = "protocol:mongodb AND NOT auth:true AND responses.body:wallet"
-        
-        # Realizamos la búsqueda
-        netlas_results = n_api.query(query=query, datatype='response')
-        
-        hallazgos = 0
-        with open("wallets_netlas_report.txt", "a") as f:
-            for item in netlas_results['items']:
-                ip = item['data']['ip']
-                port = item['data']['port']
-                # Extraemos info de la base de datos si está disponible
-                body = item['data'].get('body', '')
-                
-                print(f"    [💰] ¡POSIBLE WALLET DETECTADA!: {ip}:{port}")
-                f.write(f"IP: {ip}:{port} | Fuente: Netlas | Query: {query}\n")
-                hallazgos += 1
-                
-        print(f"✅ Se han guardado {hallazgos} posibles objetivos en 'wallets_netlas_report.txt'")
-        
-    except Exception as e:
-        print(f"    [!] Error en Netlas: {e}")
+# === FILTROS GEOGRÁFICOS Y DE TIEMPO ===
+PAIS = "MX"  # Cambia por el código de tu país (MX, ES, AR, CO, US, etc.)
+DIAS_ATRAS = 30
+fecha_limite = (datetime.now() - timedelta(days=DIAS_ATRAS)).strftime('%Y-%m-%d')
 
-def build_ultimate_panel():
-    print("[+] Actualizando Panel Maestro HTML...")
-    # Añadimos dorks de Netlas que son mejores que Google para contenido crudo
-    dorks = {
-        "Netlas: DBs con 'Credit Card'": "https://netlas.io/responses/?q=responses.body%3A%22card_number%22+AND+NOT+auth%3Atrue",
-        "Netlas: Archivos .ENV Expuestos": "https://netlas.io/responses/?q=http.body%3A%22STRIPE_SK%22+OR+http.body%3A%22AWS_SECRET%22",
-        "MEGA: Backups de Bancos (.sql)": 'site:mega.nz ext:sql "backup" "bank" OR "finance"',
-        "FOFA: Paneles de Pago": 'https://fofa.info/result?qbase64=' + urllib.parse.quote('title="payment gateway" || body="checkout"')
-    }
-    
-    filename = "panel_titan_v10.html"
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write("<html><body style='background:#000; color:#0f0; font-family:monospace; padding:30px;'>")
-        f.write("<h1>💎 Zenith Titan v10.0 - Netlas Edition</h1>")
-        for titulo, url in dorks.items():
-            f.write(f"<div style='border:1px solid #0f0; padding:10px; margin:10px;'>")
-            f.write(f"<h3>{titulo}</h3><a href='{url}' style='color:cyan;' target='_blank'>[ INVESTIGAR ]</a></div>")
-        f.write("</body></html>")
+# === QUERIES ACTUALIZADAS (CON FILTRO DE PAÍS) ===
+# Shodan usa 'country:XX'
+QUERIES_SHODAN = {
+    "DB_ABIERTAS_LOCAL": f'country:{PAIS} port:27017 -auth',
+    "PAGOS_EXPOSICION": f'country:{PAIS} "sk_live_" OR "client_secret"',
+    "RANSOMWARE_ALERTA": f'country:{PAIS} "README_FOR_DECRYPT" OR "YOUR_FILES_ARE_ENCRYPTED"'
+}
+
+# Netlas usa 'country:XX' y permite filtrar por fecha de recolección
+QUERIES_NETLAS = {
+    "EXCEL_FINANCIERO": f"country:{PAIS} AND http.body:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\" AND last_updated:>{fecha_limite}",
+    "BASES_CON_DATOS": f"country:{PAIS} AND protocol:mongodb AND responses.body:email AND NOT auth:true",
+    "BACKUPS_RECIENTES": f"country:{PAIS} AND http.title:\"Index of\" AND (http.body:\".sql\" OR http.body:\".zip\")"
+}
+
+def enviar_telegram(archivo, comentario):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+    if os.path.exists(archivo) and os.path.getsize(archivo) > 0:
+        try:
+            with open(archivo, 'rb') as f:
+                requests.post(url, files={'document': f}, data={'chat_id': TELEGRAM_CHAT_ID, 'caption': comentario})
+        except Exception as e: print(f"Error enviando {archivo}: {e}")
+
+def motor_shodan():
+    print(f"[+] Shodan: Escaneando {PAIS}...")
+    api = shodan.Shodan(SHODAN_API_KEY)
+    reporte = f"shodan_{PAIS}.txt"
+    with open(reporte, "w") as f:
+        for cat, q in QUERIES_SHODAN.items():
+            try:
+                results = api.search(q, limit=15)
+                f.write(f"\n=== {cat} ===\n")
+                for res in results['matches']:
+                    f.write(f"IP: {res['ip_str']}:{res['port']} | ISP: {res.get('isp', 'N/A')}\n")
+                time.sleep(1)
+            except: pass
+    return reporte
+
+def motor_netlas():
+    print(f"[+] Netlas: Escaneando {PAIS} (Últimos {DIAS_ATRAS} días)...")
+    n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
+    reporte = f"netlas_{PAIS}.txt"
+    with open(reporte, "w") as f:
+        for cat, q in QUERIES_NETLAS.items():
+            try:
+                results = n_api.query(query=q, datatype='response')
+                f.write(f"\n=== {cat} ===\n")
+                for item in results['items']:
+                    f.write(f"IP: {item['data']['ip']}:{item['data']['port']} | Dominio: {item['data'].get('domain', 'N/A')}\n")
+            except: pass
+    return reporte
 
 if __name__ == "__main__":
     os.system("clear")
-    print("==================================================")
-    print("   ZENITH TITAN v10.0 - THE NETLAS REVOLUTION     ")
-    print("==================================================")
+    print(f"🛰️ ZENITH TITAN v14.0 | FILTRO: {PAIS} | DESDE: {fecha_limite}")
     
-    build_ultimate_panel()
-    if NETLAS_API_KEY != "TU_API_KEY_NETLAS":
-        hunter_netlas_wallets()
+    if "TU_API" in SHODAN_API_KEY or "TU_API" in NETLAS_API_KEY:
+        print("❌ Configura tus llaves API primero.")
     else:
-        print("[!] Por favor inserta tu API KEY de Netlas para automatizar.")
+        # Ejecutar y enviar
+        r_shodan = motor_shodan()
+        enviar_telegram(r_shodan, f"📍 Infraestructura en {PAIS} (Shodan)")
+        
+        r_netlas = motor_netlas()
+        enviar_telegram(r_netlas, f"📂 Archivos y Datos en {PAIS} (Netlas)")
+        
+        print("\n[✓] Escaneo Geográfico completado. Revisa Telegram.")
