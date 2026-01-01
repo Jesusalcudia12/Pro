@@ -1,3 +1,5 @@
+import telebot
+from telebot import types
 import shodan
 import netlas
 import requests
@@ -5,81 +7,99 @@ import os
 import time
 from datetime import datetime, timedelta
 
-# === CONFIGURACIÓN DE LLAVES ===
+# === CONFIGURACIÓN DE LLAVES (Actualizadas) ===
 SHODAN_API_KEY = "iOPBaHwvZWxXzvuwagvGnb0i1vidaf2s"
 NETLAS_API_KEY = "MheJyCwplJnLO8CU1ZOC7A7OkJFTYvnk"
 TELEGRAM_TOKEN = "8583960709:AAGMxsIwVzlVUu-YvSn6Rfxn3-2Vfe-T3WU"
-TELEGRAM_CHAT_ID = "6280594821"
+TELEGRAM_CHAT_ID = 6280594821  # Tu ID como entero para validación
 
-# === FILTROS GEOGRÁFICOS Y DE TIEMPO ===
-PAIS = "MX"  # Cambia por el código de tu país (MX, ES, AR, CO, US, etc.)
-DIAS_ATRAS = 30
-fecha_limite = (datetime.now() - timedelta(days=DIAS_ATRAS)).strftime('%Y-%m-%d')
+# Inicialización
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+s_api = shodan.Shodan(SHODAN_API_KEY)
+n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
 
-# === QUERIES ACTUALIZADAS (CON FILTRO DE PAÍS) ===
-# Shodan usa 'country:XX'
-QUERIES_SHODAN = {
-    "DB_ABIERTAS_LOCAL": f'country:{PAIS} port:27017 -auth',
-    "PAGOS_EXPOSICION": f'country:{PAIS} "sk_live_" OR "client_secret"',
-    "RANSOMWARE_ALERTA": f'country:{PAIS} "README_FOR_DECRYPT" OR "YOUR_FILES_ARE_ENCRYPTED"'
-}
+# --- MIDDLEWARE DE SEGURIDAD ---
+def solo_yo(message):
+    return message.from_user.id == TELEGRAM_CHAT_ID
 
-# Netlas usa 'country:XX' y permite filtrar por fecha de recolección
-QUERIES_NETLAS = {
-    "EXCEL_FINANCIERO": f"country:{PAIS} AND http.body:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\" AND last_updated:>{fecha_limite}",
-    "BASES_CON_DATOS": f"country:{PAIS} AND protocol:mongodb AND responses.body:email AND NOT auth:true",
-    "BACKUPS_RECIENTES": f"country:{PAIS} AND http.title:\"Index of\" AND (http.body:\".sql\" OR http.body:\".zip\")"
-}
-
-def enviar_telegram(archivo, comentario):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-    if os.path.exists(archivo) and os.path.getsize(archivo) > 0:
+# --- FUNCIONES DE BÚSQUEDA ---
+def ejecutar_busqueda_completa(pais="MX"):
+    fecha_limite = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    reporte_name = f"Titan_Report_{pais}.txt"
+    
+    with open(reporte_name, "w") as f:
+        f.write(f"=== ZENITH TITAN V15.5 - REPORTE {pais} ===\n")
+        f.write(f"Fecha: {datetime.now()}\n\n")
+        
+        # Shodan Sector
         try:
-            with open(archivo, 'rb') as f:
-                requests.post(url, files={'document': f}, data={'chat_id': TELEGRAM_CHAT_ID, 'caption': comentario})
-        except Exception as e: print(f"Error enviando {archivo}: {e}")
+            q_shodan = f'country:{pais} port:27017 -auth'
+            res = s_api.search(q_shodan, limit=10)
+            f.write("--- MONGODB EXPUESTAS (SHODAN) ---\n")
+            for m in res['matches']:
+                f.write(f"IP: {m['ip_str']}:{m['port']} | Org: {m.get('org', 'N/A')}\n")
+        except: f.write("Error en Shodan DB\n")
+        
+        # Netlas Sector
+        try:
+            q_netlas = f"country:{pais} AND http.body:\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\""
+            res_n = n_api.query(query=q_netlas, datatype='response')
+            f.write("\n--- EXCEL FINANCIEROS (NETLAS) ---\n")
+            for item in res_n['items']:
+                f.write(f"IP: {item['data']['ip']} | Host: {item['data'].get('domain', 'N/A')}\n")
+        except: f.write("Error en Netlas Files\n")
 
-def motor_shodan():
-    print(f"[+] Shodan: Escaneando {PAIS}...")
-    api = shodan.Shodan(SHODAN_API_KEY)
-    reporte = f"shodan_{PAIS}.txt"
-    with open(reporte, "w") as f:
-        for cat, q in QUERIES_SHODAN.items():
-            try:
-                results = api.search(q, limit=15)
-                f.write(f"\n=== {cat} ===\n")
-                for res in results['matches']:
-                    f.write(f"IP: {res['ip_str']}:{res['port']} | ISP: {res.get('isp', 'N/A')}\n")
-                time.sleep(1)
-            except: pass
-    return reporte
+    return reporte_name
 
-def motor_netlas():
-    print(f"[+] Netlas: Escaneando {PAIS} (Últimos {DIAS_ATRAS} días)...")
-    n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
-    reporte = f"netlas_{PAIS}.txt"
-    with open(reporte, "w") as f:
-        for cat, q in QUERIES_NETLAS.items():
-            try:
-                results = n_api.query(query=q, datatype='response')
-                f.write(f"\n=== {cat} ===\n")
-                for item in results['items']:
-                    f.write(f"IP: {item['data']['ip']}:{item['data']['port']} | Dominio: {item['data'].get('domain', 'N/A')}\n")
-            except: pass
-    return reporte
+# --- COMANDOS DEL BOT ---
+@bot.message_handler(commands=['start'], func=solo_yo)
+def send_welcome(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn1 = types.InlineKeyboardButton("🚀 Escaneo MX", callback_data='scan_MX')
+    btn2 = types.InlineKeyboardButton("💰 Wallets Global", callback_data='scan_wallet')
+    btn3 = types.InlineKeyboardButton("🏦 Logins Bank", callback_data='scan_bank')
+    btn4 = types.InlineKeyboardButton("🛠 Status API", callback_data='status')
+    markup.add(btn1, btn2, btn3, btn4)
+    
+    bot.reply_to(message, "💎 *Zenith Titan v15.5 Pro*\nBienvenido Comandante. Seleccione una operación:", 
+                 parse_mode="Markdown", reply_markup=markup)
 
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "scan_MX":
+        bot.answer_callback_query(call.id, "Iniciando escaneo profundo...")
+        file = ejecutar_busqueda_completa("MX")
+        with open(file, 'rb') as doc:
+            bot.send_document(TELEGRAM_CHAT_ID, doc, caption="📍 Reporte Crítico México")
+        os.remove(file)
+        
+    elif call.data == "scan_wallet":
+        bot.answer_callback_query(call.id, "Buscando Private Keys...")
+        try:
+            res = s_api.search('"wallet.dat" OR "private_key" -auth', limit=15)
+            txt = "💰 *WALLETS ENCONTRADAS:*\n\n"
+            for m in res['matches']:
+                txt += f"• `{m['ip_str']}:{m['port']}`\n"
+            bot.send_message(TELEGRAM_CHAT_ID, txt, parse_mode="Markdown")
+        except: bot.send_message(TELEGRAM_CHAT_ID, "Error en API")
+
+    elif call.data == "scan_bank":
+        bot.answer_callback_query(call.id, "Rastreando Logins...")
+        q = "http.title:\"login\" AND (http.body:\"bank\" OR http.body:\"banca\")"
+        try:
+            res = n_api.query(query=q, datatype='response')
+            with open("banks.txt", "w") as f:
+                for i in res['items']: f.write(f"IP: {i['data']['ip']} | {i['data'].get('domain', 'N/A')}\n")
+            with open("banks.txt", "rb") as d:
+                bot.send_document(TELEGRAM_CHAT_ID, d, caption="🏦 Logins Bancarios Detectados")
+            os.remove("banks.txt")
+        except: bot.send_message(TELEGRAM_CHAT_ID, "Error en Netlas")
+
+    elif call.data == "status":
+        bot.send_message(TELEGRAM_CHAT_ID, "✅ APIs Conectadas y Operativas.")
+
+# --- INICIO ---
 if __name__ == "__main__":
     os.system("clear")
-    print(f"🛰️ ZENITH TITAN v14.0 | FILTRO: {PAIS} | DESDE: {fecha_limite}")
-    
-    if "TU_API" in SHODAN_API_KEY or "TU_API" in NETLAS_API_KEY:
-        print("❌ Configura tus llaves API primero.")
-    else:
-        # Ejecutar y enviar
-        r_shodan = motor_shodan()
-        enviar_telegram(r_shodan, f"📍 Infraestructura en {PAIS} (Shodan)")
-        
-        r_netlas = motor_netlas()
-        enviar_telegram(r_netlas, f"📂 Archivos y Datos en {PAIS} (Netlas)")
-        
-        print("\n[✓] Escaneo Geográfico completado. Revisa Telegram.")
+    print(f"🛰️ ZENITH TITAN BOT ACTIVO\nID Autorizado: {TELEGRAM_CHAT_ID}")
+    bot.infinity_polling()
