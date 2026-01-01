@@ -196,21 +196,58 @@ def process_nmap_deep(message):
     os.remove(pdf_path)
     db.registrar_operacion(target, "DEEP_RECON")
 
-@bot.message_handler(commands=['scan_url', 'scan_mx', 'geo_ip'])
-def netlas_hub(message):
-    cmd = message.text.split()[0]
-    target = message.text.split()[1] if len(message.text.split()) > 1 else None
-    
-    if not target:
-        bot.send_message(message.chat.id, "❌ Uso: /comando <objetivo>")
-        return
+@bot.message_handler(commands=['scan_url'])
+def cmd_scan_url(message):
+    msg = bot.reply_to(message, "🔍 Ingrese el DOMINIO o URL para analizar:")
+    bot.register_next_step_handler(msg, process_netlas_url)
 
-    query = f"host:{target}" if "url" in cmd else (f"ip:{target}" if "geo" in cmd else f"geo.country:MX {target}")
+def process_netlas_url(message):
+    target = message.text
+    log_operacion("scan_url", target)
+    bot.send_message(message.chat.id, f"📡 Consultando infraestructura para: `{target}`...", parse_mode="Markdown")
     try:
-        res = n_api.query(query=query)
-        bot.send_message(message.chat.id, f"📡 *Netlas Real-Intel:* \n`{str(res)[:1000]}...`", parse_mode="Markdown")
+        res = n_api.query(query=f"host:{target}")
+        data = json.dumps(res, indent=2)
+        bot.send_message(message.chat.id, f"📊 *Hallazgos:* \n`{data[:1000]}`", parse_mode="Markdown")
     except:
-        bot.send_message(message.chat.id, "❌ Error de API Netlas.")
+        bot.send_message(message.chat.id, "❌ Error: Dominio no encontrado o API caída.")
+
+@bot.message_handler(commands=['scan_mx'])
+def cmd_scan_mx(message):
+    msg = bot.reply_to(message, "🇲🇽 Ingrese término de búsqueda para México (ej. Gobierno, Telmex):")
+    bot.register_next_step_handler(msg, process_netlas_mx)
+
+def process_netlas_mx(message):
+    target = message.text
+    log_operacion("scan_mx", target)
+    bot.send_message(message.chat.id, f"🇲🇽 Rastreando activos en MX para: `{target}`...", parse_mode="Markdown")
+    try:
+        res = n_api.query(query=f"{target} geo.country:MX")
+        bot.send_message(message.chat.id, f"📡 *Resultados México:* \n`{str(res)[:1000]}`", parse_mode="Markdown")
+    except:
+        bot.send_message(message.chat.id, "❌ Error en búsqueda regional.")
+
+@bot.message_handler(commands=['geo_ip'])
+def cmd_geo_ip(message):
+    msg = bot.reply_to(message, "📍 Ingrese la dirección IP para geolocalizar:")
+    bot.register_next_step_handler(msg, process_geo_ip)
+
+def process_geo_ip(message):
+    target = message.text
+    log_operacion("geo_ip", target)
+    bot.send_message(message.chat.id, f"📍 Localizando IP: `{target}`...", parse_mode="Markdown")
+    try:
+        res = n_api.query(query=f"ip:{target}")
+        bot.send_message(message.chat.id, f"🗺️ *Geolocalización:* \n`{str(res)[:1000]}`", parse_mode="Markdown")
+    except:
+        bot.send_message(message.chat.id, "❌ Error: IP inválida o sin datos.")
+
+# --- COMANDO LEAK (NO SIMULADO - OSINT REAL) ---
+
+@bot.message_handler(commands=['leak'])
+def cmd_leak(message):
+    msg = bot.reply_to(message, "👤 Ingrese Correo o Nombre completo (Búsqueda OSINT Real):")
+    bot.register_next_step_handler(msg, process_real_leak)
 
 @bot.message_handler(commands=['check_pendientes'])
 def pendientes(message):
