@@ -18,7 +18,7 @@ ESPERANDO_SCAN, ESPERANDO_LOGINS, ESPERANDO_EXPLOIT, ESPERANDO_BUGS, ESPERANDO_W
 if not os.path.exists(LEAKS_DIR):
     os.makedirs(LEAKS_DIR)
 
-# --- CLASE PDF PROFESIONAL ---
+# --- CLASE PDF PROFESIONAL (Para comandos de Auditoría) ---
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 15)
@@ -36,7 +36,6 @@ def generate_pdf(filename, content, title, admin_highlight=False):
     admin_keys = ["admin", "root", "manager", "dashboard", "wp-login", "panel", "config", "login", "portal"]
     
     for line in content:
-        # Lógica de resaltado administrativo en rojo
         if admin_highlight and any(k in line.lower() for k in admin_keys):
             pdf.set_font("Arial", 'B', 9)
             pdf.set_text_color(255, 0, 0)
@@ -52,9 +51,9 @@ def generate_pdf(filename, content, title, admin_highlight=False):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "👑 *Zenith Titan v73.0 ACTIVO*\n\n"
-        "🟢 `/scan` - Mapeo de Red e IPs\n"
+        "🟢 `/scan` - Ver todas las URLs e IPs de la empresa\n"
         "📊 `/status` - Estado del sistema\n"
-        "🔓 `/logins` - Leaks Profundos (User:Pass)\n"
+        "🔓 `/logins` - Ver URLs con Correo y Contraseña\n"
         "💀 `/exploit` - Buscar PoCs de CVEs\n"
         "🎯 `/find_bugs` - Auditoría Pro PDF\n"
         "🌐 `/search_web` - Búsqueda en Combos\n"
@@ -66,65 +65,76 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     archivos = len([f for f in os.listdir(LEAKS_DIR) if f.endswith('.txt')])
     await update.message.reply_text(f"📊 *Estado:* \n• APIs: Online (Netlas)\n• Archivos en Base: {archivos}\n• Motor: Titan v73.0 Deep Scan")
 
-# --- PROCESAMIENTO INTERACTIVO (MEJORADO) ---
+# --- PROCESAMIENTO ACTUALIZADO (SCAN & LOGINS POR MENSAJE) ---
 
 async def cmd_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🌐 *Mapeo:* Inserta la URL o Dominio para extraer IPs:")
+    await update.message.reply_text("🌐 *Mapeo de Red:* Inserta la URL o Dominio:")
     return ESPERANDO_SCAN
-
-async def cmd_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔓 *Extracción Profunda:* Inserta la URL o ruta del panel para buscar correos y claves:")
-    return ESPERANDO_LOGINS
-
-# --- LÓGICA DE EJECUCIÓN MEJORADA ---
 
 async def proc_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = update.message.text.strip()
+    await update.message.reply_text(f"🛰 *Escaneando infraestructura de:* `{target}`...")
     headers = {'X-API-Key': API_NETLAS}
     url = f"https://app.netlas.io/api/domains/?q=domain:*.{target}"
     try:
         res = requests.get(url, headers=headers).json()
         items = res.get('items', [])
-        # Mejora: Busca IP en registros A o en el campo ip directo
-        data = []
-        for i in items:
+        
+        if not items:
+            await update.message.reply_text("❌ No se encontraron resultados en Netlas.")
+            return ConversationHandler.END
+
+        mensaje = f"🌐 *RUTAS E IPS HALLADAS PARA:* `{target}`\n\n"
+        for i in items[:30]:
             domain = i['data'].get('domain', 'N/A')
-            ip = i['data'].get('ip', i['data'].get('a', 'No detectada'))
-            data.append(f"{domain} | IP: {ip}")
-            
-        pdf_name = f"scan_{target}.pdf"
-        generate_pdf(pdf_name, data, f"Mapeo de Red e IPs: {target}")
-        await update.message.reply_document(document=open(pdf_name, 'rb'), caption=f"✅ Mapeo de {target} finalizado.")
-        os.remove(pdf_name)
-    except: await update.message.reply_text("❌ Error en Netlas o sin resultados.")
+            ip = i['data'].get('ip', i['data'].get('a', 'Desconocida'))
+            mensaje += f"📍 `{domain}`\n└─ 💻 IP: `{ip}`\n\n"
+        
+        if len(mensaje) > 4096:
+            for x in range(0, len(mensaje), 4096):
+                await update.message.reply_text(mensaje[x:x+4096], parse_mode="Markdown")
+        else:
+            await update.message.reply_text(mensaje, parse_mode="Markdown")
+    except: await update.message.reply_text("❌ Error al conectar con Netlas.")
     return ConversationHandler.END
+
+async def cmd_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔓 *Deep Web Scraper:* Inserta la URL o dominio de la empresa:")
+    return ESPERANDO_LOGINS
 
 async def proc_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip().lower()
-    await update.message.reply_text(f"🔍 Buscando credenciales de usuarios y admins para: `{query}`...")
+    await update.message.reply_text(f"🔎 Buscando accesos para `{query}`...")
     
     encontrados = []
-    # Búsqueda profunda en todos los archivos de la carpeta leaks
+    admin_tags = ["admin", "root", "panel", "login", "config", "dashboard"]
+    
     for archivo in os.listdir(LEAKS_DIR):
         if archivo.endswith(".txt"):
             with open(os.path.join(LEAKS_DIR, archivo), 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     if query in line.lower():
                         encontrados.append(line.strip())
-    
+                    if len(encontrados) >= 40: break
+        if len(encontrados) >= 40: break
+
     if encontrados:
-        pdf_name = f"leaks_{query.replace('/', '_')}.pdf"
-        generate_pdf(pdf_name, encontrados, f"Extracción de Credenciales: {query}", admin_highlight=True)
-        await update.message.reply_document(
-            document=open(pdf_name, 'rb'), 
-            caption=f"🔥 ÉXITO: Se extrajeron {len(encontrados)} registros (User:Pass)."
-        )
-        os.remove(pdf_name)
+        res_msg = f"🔥 *CREDENCIALES HALLADAS PARA:* `{query}`\n"
+        res_msg += "Formato: `URL : CORREO : PASS`\n\n"
+        for res in encontrados:
+            es_admin = "🚨 [ADMIN] " if any(tag in res.lower() for tag in admin_tags) else "👤 "
+            res_msg += f"{es_admin}`{res}`\n\n"
+        
+        if len(res_msg) > 4096:
+            for x in range(0, len(res_msg), 4096):
+                await update.message.reply_text(res_msg[x:x+4096], parse_mode="Markdown")
+        else:
+            await update.message.reply_text(res_msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text("✅ No se hallaron credenciales en lo profundo de esa URL.")
+        await update.message.reply_text(f"✅ No se hallaron credenciales para `{query}`.")
     return ConversationHandler.END
 
-# --- COMANDOS RESTANTES (MANTENIDOS) ---
+# --- COMANDOS RESTANTES (SIN CAMBIOS) ---
 
 async def cmd_exploit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("💀 *Exploit Engine:* Inserta el software o CVE:")
@@ -158,7 +168,7 @@ async def cmd_search_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_WEB
 
 async def upload_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📩 Envía el archivo .txt con los combos para guardarlos.")
+    await update.message.reply_text("📩 Envía el archivo .txt con los combos.")
 
 async def handle_docs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
@@ -196,5 +206,5 @@ if __name__ == '__main__':
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_docs))
     
-    print("Zenith Titan v73.0 con Extracción Profunda Online...")
+    print("Zenith Titan v73.0 Online...")
     app.run_polling()
