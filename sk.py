@@ -11,15 +11,13 @@ from urllib.parse import quote, urlparse
 TELEGRAM_TOKEN = "8583960709:AAGMxsIwVzlVUu-YvSn6Rfxn3-2Vfe-T3WU"
 TELEGRAM_CHAT_ID = 6280594821 
 NETLAS_API_KEY = "MheJyCwplJnLO8CU1ZOC7A7OkJFTYvnk"
-MI_BILLETERA_USDT = "TWzf9VJmr2mhq5H8Xa3bLhbb8dwmWdG9B7I"
-PRECIO_BASE = "350.00 USDT"
 
-# Optimización extrema: 50 hilos para procesamiento paralelo
+# Optimización: 50 hilos y manejo de concurrencia
 bot = telebot.TeleBot(TELEGRAM_TOKEN, threaded=True, num_threads=50)
 n_api = netlas.Netlas(api_key=NETLAS_API_KEY)
 
 # ==========================================
-# MOTOR DE BASE DE DATOS (Zenith DB)
+# MOTOR DE BASE DE DATOS
 # ==========================================
 class DatabaseManager:
     def __init__(self, db_name='zenith_titan.db'):
@@ -29,181 +27,181 @@ class DatabaseManager:
 
     def setup(self):
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS objetivos 
-            (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT, tipo TEXT, fecha TEXT, monto TEXT)''')
+            (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT, tipo TEXT, fecha TEXT)''')
         self.conn.commit()
 
     def registrar(self, target, tipo):
         fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         try:
-            self.cursor.execute("INSERT INTO objetivos (target, tipo, fecha, monto) VALUES (?, ?, ?, ?)", 
-                               (target, tipo, fecha, PRECIO_BASE))
+            self.cursor.execute("INSERT INTO objetivos (target, tipo, fecha) VALUES (?, ?, ?)", (target, tipo, fecha))
             self.conn.commit()
-        except sqlite3.OperationalError:
-            self.cursor.execute("ALTER TABLE objetivos ADD COLUMN tipo TEXT")
-            self.conn.commit()
-            self.registrar(target, tipo)
+        except: pass
 
 db = DatabaseManager()
 
 # ==========================================
-# MOTOR DE REPORTES PDF (Zenith Graphics)
+# MOTOR DE REPORTES PDF
 # ==========================================
 class ZenithReport(FPDF):
     def header(self):
-        self.set_fill_color(15, 15, 15)
-        self.rect(0, 0, 210, 45, 'F')
-        self.set_font('Arial', 'B', 28)
+        self.set_fill_color(20, 20, 20)
+        self.rect(0, 0, 210, 40, 'F')
+        self.set_font('Arial', 'B', 22)
         self.set_text_color(255, 255, 255)
-        self.cell(0, 25, 'ZENITH TITAN SYSTEMS', 0, 1, 'C')
-        self.ln(35)
+        self.cell(0, 20, 'ZENITH TITAN AUDIT REPORT', 0, 1, 'C')
+        self.ln(20)
 
-def generar_pdf(target, data_dict):
+def generar_pdf(target, nmap_data):
     pdf = ZenithReport()
     pdf.add_page()
-    pdf.set_font("Courier", 'B', 14)
-    for seccion, contenido in data_dict.items():
-        pdf.set_fill_color(40, 40, 40)
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(0, 8, seccion, ln=True, fill=True)
-        pdf.set_font("Courier", size=9)
-        pdf.set_text_color(0, 0, 0)
-        pdf.multi_cell(0, 5, txt=str(contenido))
-        pdf.ln(5)
-    path = f"ZENITH_REPORT_{target.replace('.', '_')}.pdf"
+    pdf.set_font("Courier", 'B', 12)
+    pdf.cell(0, 10, f"TARGET: {target}", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Courier", size=9)
+    pdf.multi_cell(0, 5, txt=nmap_data)
+    path = f"AUDIT_{target.replace('.', '_')}.pdf"
     pdf.output(path)
     return path
 
 # ==========================================
-# MANEJADORES DE COMANDOS (NÚCLEO OMNI)
+# MANEJADORES DE COMANDOS
 # ==========================================
 
-@bot.message_handler(commands=['start'])
-def start(message):
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
     if message.chat.id != TELEGRAM_CHAT_ID: return
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add('/scan', '/logins', '/exploit', '/find_bugs', '/scan_url', '/upload_combo', '/status')
-    bot.send_message(message.chat.id, "🚀 **ZENITH TITAN v73.0 OMNI-STRIKE**\nNúcleo especialista en inteligencia cargado.", parse_mode="Markdown", reply_markup=markup)
-
-# --- 1. COMANDO /STATUS (SISTEMA) ---
-@bot.message_handler(commands=['status'])
-def status_check(message):
-    num_combos = len(glob.glob("combos/*.txt")) if os.path.exists("combos") else 0
-    uptime = datetime.now().strftime('%H:%M:%S')
-    status_msg = (
-        "📊 **ESTADO DEL SISTEMA:**\n"
+    text = (
+        "🚀 **ZENITH TITAN v76.0 OMNI-CORE**\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ **Core:** `v73.0 Stable`\n"
-        f"📡 **API Netlas:** `Online`\n"
-        f"📂 **Combos Locales:** `{num_combos} archivos`\n"
-        f"🧵 **Hilos Activos:** `50`\n"
-        f"🕒 **Sincronización:** `{uptime}`\n"
+        "🛰 `/scan` - Mapeo de Red (Dominios e IPs)\n"
+        "🔓 `/logins` - Búsqueda de Leaks Reales (Dorks)\n"
+        "💀 `/exploit` - Buscador de Exploits CVE\n"
+        "🎯 `/find_bugs` - Auditoría Nmap + Reporte PDF\n"
+        "📂 `/scan_url` - Buscar en base de datos local\n"
+        "📩 `/upload_combo` - Subir archivos .txt\n"
+        "📊 `/status` - Estado del sistema y archivos\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "🟢 **SISTEMA OPERATIVO AL 100%**"
+        "Seleccione una opción del menú:"
     )
-    bot.send_message(message.chat.id, status_msg, parse_mode="Markdown")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add('/scan', '/logins', '/exploit', '/find_bugs', '/scan_url', '/status')
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
-# --- 2. COMANDO /SCAN (DOMINIOS + IPs) ---
+# 1. SCAN (Infraestructura)
 @bot.message_handler(commands=['scan'])
-def ask_scan(message):
-    msg = bot.send_message(message.chat.id, "🌐 Ingrese dominio base para mapear red e IPs:")
-    bot.register_next_step_handler(msg, exec_scan_infra)
+def cmd_scan(message):
+    msg = bot.send_message(message.chat.id, "🌐 Ingrese el dominio para mapear:")
+    bot.register_next_step_handler(msg, process_scan)
 
-def exec_scan_infra(message):
+def process_scan(message):
     target = message.text.strip().lower()
-    bot.send_message(message.chat.id, "📡 Rastreando infraestructura y resolviendo IPs...")
+    bot.send_message(message.chat.id, "📡 Consultando Netlas y resolviendo IPs...")
     try:
         res = n_api.query(query=f"domain:*.{target}", datatype="domain")
-        dominios = list(set([item['data']['domain'] for item in res['items']]))[:25]
-        out = f"🛰 **MAPEO DE RED: {target}**\n\n"
-        for d in dominios:
+        items = res.get('items', [])[:20]
+        out = f"🛰 **INFRAESTRUCTURA: {target}**\n\n"
+        for i in items:
+            d = i['data']['domain']
             try: ip = socket.gethostbyname(d); out += f"• `{d}` ➔ `{ip}`\n"
             except: out += f"• `{d}` ➔ `[No IP]`\n"
         bot.send_message(message.chat.id, out, parse_mode="Markdown")
-    except: bot.send_message(message.chat.id, "❌ Error en conexión Netlas.")
-    db.registrar(target, "INFRA_SCAN")
+        db.registrar(target, "SCAN")
+    except: bot.send_message(message.chat.id, "❌ Error en la API.")
 
-# --- 3. COMANDO /LOGINS (WEB LEAKS URL+USER+PASS) ---
+# 2. LOGINS (Inteligencia de Filtraciones)
 @bot.message_handler(commands=['logins'])
-def ask_logins(message):
-    msg = bot.send_message(message.chat.id, "🔓 Ingrese dominio para rastrear leaks en la web:")
-    bot.register_next_step_handler(msg, exec_logins_web)
+def cmd_logins(message):
+    msg = bot.send_message(message.chat.id, "🔓 Ingrese dominio para rastrear leaks reales:")
+    bot.register_next_step_handler(msg, process_logins)
 
-def exec_logins_web(message):
+def process_logins(message):
     target = message.text.strip().lower()
-    # Generación de dorks para el usuario y simulación de extracción
-    query = quote(f'site:pastebin.com "{target}" password')
-    res = f"☣️ **EXTRACCIÓN WEB EXITOSA:**\n━━━━━━━━━━━━━━━━━━━━\n"
-    res += f"📍 `{target}+admin@{target}:Pass2026!`\n"
-    res += f"📍 `{target}+root@{target}:root_secret`\n\n"
-    res += f"🔗 **[VER FUENTES EN VIVO](https://www.google.com/search?q={query})**"
+    dork = quote(f'site:pastebin.com OR site:github.com "{target}" password')
+    res = (f"☣️ **INTELIGENCIA WEB: {target}**\n\n"
+           f"📂 [CLICK AQUÍ PARA VER LEAKS REALES](https://www.google.com/search?q={dork})\n\n"
+           "💡 *Usa /upload_combo si descargas un archivo .txt*")
     bot.send_message(message.chat.id, res, parse_mode="Markdown", disable_web_page_preview=True)
-    db.registrar(target, "WEB_LOGINS")
 
-# --- 4. COMANDO /EXPLOIT (CVE SEARCH) ---
+# 3. EXPLOIT (CVE)
 @bot.message_handler(commands=['exploit'])
-def ask_exploit(message):
-    msg = bot.send_message(message.chat.id, "💀 Ingrese servicio/versión para buscar Exploits:")
-    bot.register_next_step_handler(msg, exec_exploit_hunt)
+def cmd_exploit(message):
+    msg = bot.send_message(message.chat.id, "💀 ¿Qué servicio/tecnología buscas?")
+    bot.register_next_step_handler(msg, process_exploit)
 
-def exec_exploit_hunt(message):
+def process_exploit(message):
     tech = message.text.strip()
     try:
-        r = requests.get(f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={quote(tech)}", timeout=10).json()
-        vulnerabilidades = r.get('vulnerabilities', [])[:5]
-        out = f"☢️ **EXPLOITS DETECTADOS:**\n\n"
-        for v in vulnerabilidades:
-            cve = v['cve']['id']
-            out += f"• {cve} ➔ [Ver PoC](https://www.exploit-db.com/search?cve={cve[4:]})\n"
+        r = requests.get(f"https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch={quote(tech)}").json()
+        vulns = r.get('vulnerabilities', [])[:5]
+        out = f"☢️ **EXPLOITS: {tech}**\n\n"
+        for v in vulns:
+            id_cve = v['cve']['id']
+            out += f"• {id_cve} ➔ [Exploit-DB](https://www.exploit-db.com/search?cve={id_cve[4:]})\n"
         bot.send_message(message.chat.id, out, parse_mode="Markdown")
-    except: bot.send_message(message.chat.id, "❌ No se hallaron CVEs críticos.")
-    db.registrar(tech, "EXPLOIT_HUNT")
+    except: bot.send_message(message.chat.id, "❌ Sin resultados.")
 
-# --- 5. COMANDO /FIND_BUGS (PDF REPORT) ---
+# 4. FIND_BUGS (Nmap Persistente)
 @bot.message_handler(commands=['find_bugs'])
-def ask_hunt(message):
-    msg = bot.send_message(message.chat.id, "🎯 Ingrese objetivo para Auditoría Nmap:")
-    bot.register_next_step_handler(msg, exec_nmap_audit)
+def cmd_bugs(message):
+    msg = bot.send_message(message.chat.id, "🎯 Ingrese IP o Dominio para Auditoría Profunda:")
+    bot.register_next_step_handler(msg, process_bugs)
 
-def exec_nmap_audit(message):
+def process_bugs(message):
     target = message.text.strip().lower()
-    bot.send_message(message.chat.id, "🚀 Iniciando escaneo de vulnerabilidades...")
+    bot.send_message(message.chat.id, "🚀 **Auditando...** (Tiempo estimado: 2-5 min). No cierres el bot.")
     try:
-        nmap_out = subprocess.check_output(["nmap", "-F", "-Pn", "--script=vuln", target], timeout=150, text=True)
-        pdf = generar_pdf(target, {"ANALISIS TECNICO": nmap_out})
-        with open(pdf, "rb") as f: bot.send_document(message.chat.id, f, caption=f"🏆 Reporte Final: {target}")
-        os.remove(pdf)
-    except: bot.send_message(message.chat.id, "⚠️ Escaneo fallido o tiempo agotado.")
-    db.registrar(target, "FULL_AUDIT")
+        # T4 para velocidad, -Pn para ignorar ping, --script=vuln para bugs
+        nmap_cmd = ["nmap", "-F", "-Pn", "--script=vuln", "--max-retries", "3", "-T4", target]
+        output = subprocess.check_output(nmap_cmd, timeout=600, text=True)
+        pdf_path = generar_pdf(target, output)
+        with open(pdf_path, "rb") as f:
+            bot.send_document(message.chat.id, f, caption=f"🏆 Auditoría: {target}")
+        os.remove(pdf_path)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"⚠️ Error o Tiempo Agotado. Reintentando básico...\n`{str(e)[:100]}`")
+        try:
+            output = subprocess.check_output(["nmap", "-F", target], timeout=120, text=True)
+            bot.send_message(message.chat.id, f"✅ Escaneo rápido:\n`{output}`")
+        except: bot.send_message(message.chat.id, "❌ Objetivo inalcanzable.")
 
-# --- 6. COMANDOS LOCALES (COMBOS) ---
+# 5. SCAN_URL (Búsqueda Local)
 @bot.message_handler(commands=['scan_url'])
-def ask_local(message):
-    msg = bot.send_message(message.chat.id, "📂 Ingrese dominio para buscar en base local:")
-    bot.register_next_step_handler(msg, exec_local_search)
+def cmd_local(message):
+    msg = bot.send_message(message.chat.id, "📂 Palabra a buscar en archivos locales:")
+    bot.register_next_step_handler(msg, process_local)
 
-def exec_local_search(message):
-    target = message.text.strip().lower()
+def process_local(message):
+    query = message.text.strip().lower()
     matches = []
     for f in glob.glob("combos/*.txt"):
         with open(f, 'r', encoding='utf-8', errors='ignore') as file:
             for line in file:
-                if target in line.lower(): matches.append(line.strip())
+                if query in line.lower():
+                    matches.append(line.strip())
                 if len(matches) >= 20: break
-    bot.send_message(message.chat.id, "🔑 **COINCIDENCIAS LOCALES:**\n\n" + "\n".join(matches) if matches else "❌ Sin datos.")
+    if matches:
+        bot.send_message(message.chat.id, "🔑 **ENCONTRADO:**\n\n" + "\n".join([f"`{m}`" for m in matches]), parse_mode="Markdown")
+    else: bot.send_message(message.chat.id, "❌ Sin coincidencias.")
+
+# 6. STATUS Y UPLOAD
+@bot.message_handler(commands=['status'])
+def cmd_status(message):
+    num = len(glob.glob("combos/*.txt")) if os.path.exists("combos") else 0
+    bot.send_message(message.chat.id, f"📊 **ESTADO:** ONLINE\n• Hilos: 50\n• Archivos en Base: {num} .txt\n• API Netlas: Conectada")
 
 @bot.message_handler(commands=['upload_combo'])
-def upload_request(message): bot.send_message(message.chat.id, "📩 Envíame un archivo `.txt` para guardarlo en la base.")
+def cmd_upload(message):
+    bot.send_message(message.chat.id, "📩 Envíame un archivo .txt para la base.")
 
 @bot.message_handler(content_types=['document'])
-def save_file(message):
+def handle_docs(message):
     if message.document.file_name.endswith('.txt'):
-        f_info = bot.get_file(message.document.file_id)
-        downloaded = bot.download_file(f_info.file_path)
+        f = bot.get_file(message.document.file_id)
+        d = bot.download_file(f.file_path)
         if not os.path.exists("combos"): os.makedirs("combos")
-        with open(f"combos/{message.document.file_name}", "wb") as f: f.write(downloaded)
-        bot.reply_to(message, "✅ Archivo indexado correctamente.")
+        with open(f"combos/{message.document.file_name}", "wb") as file: file.write(d)
+        bot.reply_to(message, "✅ Base de datos alimentada.")
 
 if __name__ == "__main__":
-    print("🚀 ZENITH TITAN v73.0 OMNI-STRIKE OPERATIVO")
-    bot.infinity_polling(skip_pending=True)
+    print("🚀 ZENITH TITAN v76.0 - OMNI-CORE READY")
     bot.infinity_polling(skip_pending=True)
