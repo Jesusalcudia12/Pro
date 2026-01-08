@@ -70,7 +70,7 @@ class ZenithReport(FPDF):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f'ID: {os.urandom(3).hex().upper()} | Zenith v55.0', 0, 0, 'C')
+        self.cell(0, 10, f'ID: {os.urandom(3).hex().upper()} | Zenith v56.0', 0, 0, 'C')
 
 def generar_pdf_reporte(target, data, titulo):
     pdf = ZenithReport()
@@ -84,10 +84,9 @@ def generar_pdf_reporte(target, data, titulo):
     return path
 
 # ==========================================
-# FUNCIONES DE BÚSQUEDA REAL (LOCAL Y WEB)
+# FUNCIONES DE BÚSQUEDA Y ANÁLISIS REAL
 # ==========================================
 def buscar_en_combos_locales(dominio):
-    """Escaneo real de archivos .txt en la carpeta combos/"""
     resultados = []
     archivos = glob.glob("combos/*.txt")
     for arc in archivos:
@@ -96,7 +95,7 @@ def buscar_en_combos_locales(dominio):
                 for linea in f:
                     if dominio.lower() in linea.lower():
                         resultados.append(linea.strip())
-                    if len(resultados) >= 40: break # Evitar saturación
+                    if len(resultados) >= 40: break
         except: pass
     return resultados
 
@@ -114,11 +113,11 @@ def buscar_cves_nist(tecnologia):
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     if message.chat.id != TELEGRAM_CHAT_ID:
-        bot.send_message(message.chat.id, "❌ Acceso denegado. Este sistema es privado.")
+        bot.send_message(message.chat.id, "❌ Acceso denegado.")
         return
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add('/scan_url', '/leak', '/exploit', '/port_scan', '/status', '/combos')
-    bot.send_message(message.chat.id, "👑 *SISTEMA OMEGA CARGADO*\nBienvenido al núcleo Zenith.", 
+    markup.add('/scan_url', '/find_bugs', '/leak', '/exploit', '/port_scan', '/status', '/combos')
+    bot.send_message(message.chat.id, "👑 *NÚCLEO ZENITH v56.0 ACTIVADO*\nListo para auditoría y caza de fallos.", 
                      parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['scan_url'])
@@ -129,13 +128,8 @@ def ask_scan(message):
 def exec_scan_url(message):
     target = message.text.strip().lower()
     domain = target.replace("https://", "").replace("http://", "").split("/")[0]
-    
     bot.send_message(message.chat.id, f"🛰️ Rastreeando registros para `{domain}`...")
-    
-    # Búsqueda real en tus archivos (como el sivale.mx.txt)
     leaks = buscar_en_combos_locales(domain)
-    
-    # Consulta Infraestructura
     try:
         net_res = n_api.query(query=f"host:{domain}")
         net_info = json.dumps(net_res, indent=2)[:400]
@@ -143,37 +137,62 @@ def exec_scan_url(message):
 
     respuesta = f"📂 *EXTRACCIÓN DE CREDENCIALES:* `{domain}`\n"
     respuesta += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
     if leaks:
         for l in leaks[:15]: respuesta += f"`{l}`\n\n"
-        if len(leaks) > 15: respuesta += f"👉 _Y {len(leaks)-15} registros más..._"
     else:
         respuesta += "❌ No se encontraron logs en la base local.\n"
-    
-    respuesta += f"\n🌐 *NET-INFRA:*\n`{net_info}`\n"
-    respuesta += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
+    respuesta += f"\n🌐 *NET-INFRA:*\n`{net_info}`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     bot.send_message(message.chat.id, respuesta, parse_mode="Markdown", disable_web_page_preview=True)
     db.registrar_operacion("SCAN_URL", domain)
 
+# --- NUEVO COMANDO: DETECCIÓN DE FALLOS REALES ---
+@bot.message_handler(commands=['find_bugs'])
+def ask_bugs(message):
+    msg = bot.send_message(message.chat.id, "🎯 *MODO CAZADOR:* Ingrese URL/IP para buscar fallos críticos:")
+    bot.register_next_step_handler(msg, exec_find_bugs)
+
+def exec_find_bugs(message):
+    target = message.text.strip()
+    bot.send_message(message.chat.id, f"🚀 Iniciando escaneo de vulnerabilidades en `{target}`...\nEsto puede tardar 1-2 minutos.")
+    
+    # 1. Escaneo de Vulnerabilidades con Nmap Scripts
+    try:
+        vuln_res = subprocess.check_output(["nmap", "-sV", "--script=vuln", target], timeout=120, text=True)
+    except Exception as e:
+        vuln_res = f"Error en escaneo activo: {str(e)}"
+
+    # 2. Generación de Dork de archivos sensibles
+    dork = f"site:{target} ext:sql | ext:env | ext:log | ext:bak"
+    google_link = f"https://www.google.com/search?q={quote(dork)}"
+
+    reporte = f"🛡️ *REPORTE DE HALLAZGOS:* `{target}`\n\n"
+    reporte += "🔍 *ANÁLISIS DE SERVICIOS:*\n"
+    reporte += f"`{vuln_res[:800]}`\n\n"
+    reporte += "📂 *FUGA DE ARCHIVOS (OSINT):*\n"
+    reporte += f"[Ver posibles archivos expuestos]({google_link})\n"
+    
+    pdf_path = generar_pdf_reporte(target, vuln_res, "FALLOS_CRITICOS")
+    with open(pdf_path, "rb") as f:
+        bot.send_document(message.chat.id, f, caption=f"☢️ Auditoría Completa de Fallos: {target}")
+    
+    os.remove(pdf_path)
+    db.registrar_operacion("BUG_HUNT", target)
+
 @bot.message_handler(commands=['exploit'])
 def ask_exp(message):
-    msg = bot.send_message(message.chat.id, "🛡️ Ingrese Software/Versión para buscar CVEs:")
+    msg = bot.send_message(message.chat.id, "🛡️ Ingrese Software/Versión (ej: Apache 2.4.49):")
     bot.register_next_step_handler(msg, exec_exploit)
 
 def exec_exploit(message):
     tech = message.text
     bot.send_message(message.chat.id, f"🔎 Consultando NIST para {tech}...")
     cves = buscar_cves_nist(tech)
-    
     if not cves:
-        bot.send_message(message.chat.id, "❌ Sin resultados reales.")
+        bot.send_message(message.chat.id, "❌ Sin resultados.")
         return
-
     rep_content = ""
     for c in cves[:10]:
         rep_content += f"ID: {c['cve']['id']}\nDESC: {c['cve']['descriptions'][0]['value']}\n\n"
-    
     path = generar_pdf_reporte(tech, rep_content, "VULNERABILIDADES")
     with open(path, "rb") as f:
         bot.send_document(message.chat.id, f, caption=f"☢️ CVE Report: {tech}")
@@ -182,36 +201,35 @@ def exec_exploit(message):
 
 @bot.message_handler(commands=['port_scan'])
 def ask_port(message):
-    msg = bot.send_message(message.chat.id, "🔌 Ingrese IP para Escaneo Nmap:")
+    msg = bot.send_message(message.chat.id, "🔌 Ingrese IP:")
     bot.register_next_step_handler(msg, exec_port)
 
 def exec_port(message):
     target = message.text
-    bot.send_message(message.chat.id, f"⚡ Ejecutando Nmap en {target}...")
+    bot.send_message(message.chat.id, f"⚡ Nmap en {target}...")
     try:
         res = subprocess.check_output(["nmap", "-F", target], timeout=60).decode()
         bot.send_message(message.chat.id, f"📋 *Nmap:* \n`{res}`", parse_mode="Markdown")
         db.registrar_operacion("PORT_SCAN", target)
     except:
-        bot.send_message(message.chat.id, "❌ Error al ejecutar Nmap.")
+        bot.send_message(message.chat.id, "❌ Error Nmap.")
 
 @bot.message_handler(commands=['combos'])
 def cmd_combos(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔍 Dork Gmail", callback_data="d_1"),
                types.InlineKeyboardButton("🔍 Dork SQL", callback_data="d_2"))
-    bot.send_message(message.chat.id, "🎯 *ACCESO A DORKS REALES:*", reply_markup=markup)
+    bot.send_message(message.chat.id, "🎯 *ACCESO A DORKS:*", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('d_'))
 def handle_dork_links(call):
     d = {"d_1": 'filetype:txt "@gmail.com:" password', "d_2": 'filetype:sql "users" "password"'}
     url = f"https://www.google.com/search?q={quote(d[call.data])}"
-    bot.send_message(call.message.chat.id, f"🚀 [RESULTADOS GOOGLE OSINT]({url})", parse_mode="Markdown")
+    bot.send_message(call.message.chat.id, f"🚀 [RESULTADOS]({url})", parse_mode="Markdown")
 
 @bot.message_handler(commands=['status'])
 def cmd_status(message):
-    uptime = "ESTABLE"
-    bot.send_message(message.chat.id, f"📊 *ZENITH STATUS*\nMotor: {uptime}\nDB: CONNECTED\nTHREADS: ACTIVE", parse_mode="Markdown")
+    bot.send_message(message.chat.id, "📊 *STATUS: OK*\nDB: CONNECTED\nNMAP: READY\nLEAK-ENGINE: ACTIVE", parse_mode="Markdown")
 
 # ==========================================
 # INICIO DEL SISTEMA
@@ -219,5 +237,5 @@ def cmd_status(message):
 if __name__ == "__main__":
     if not os.path.exists("combos"): os.makedirs("combos")
     os.system("clear")
-    print("💎 ZENITH TITAN OMEGA v55.0 - OPERATIVO")
+    print("💎 ZENITH TITAN OMEGA v56.0 - HUNTER EDITION")
     bot.infinity_polling(skip_pending=True)
