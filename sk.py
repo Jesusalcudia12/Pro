@@ -134,53 +134,42 @@ async def cmd_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_LOGINS
 
 async def proc_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text.strip().lower()
-    await update.message.reply_text(f"📡 *Extrayendo datos reales para:* `{query}`...")
+    target = update.message.text.strip().lower()
+    await update.message.reply_text(f"🔍 *Iniciando Inteligencia Web para:* `{target}`\nBuscando Leaks, Teléfonos y Credenciales...")
+
+    # 1. Búsqueda de Paneles de Login y posibles fugas en Netlas
+    headers = {'X-API-Key': API_NETLAS}
+    # Buscamos archivos de texto o excel que podrían ser combos/leaks en el dominio
+    dork_query = f"domain:*{target} AND (filetype:txt OR filetype:xls OR filetype:env)"
+    url_netlas = f"https://app.netlas.io/api/responses/?q={urllib.parse.quote(dork_query)}"
     
-    encontrados = []
-
-    # 1. BÚSQUEDA EN BASE LOCAL (Tus archivos .txt)
-    if os.path.exists(LEAKS_DIR):
-        for archivo in os.listdir(LEAKS_DIR):
-            if archivo.endswith(".txt"):
-                path = os.path.join(LEAKS_DIR, archivo)
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in f:
-                        if query in line.lower():
-                            encontrados.append(f"📁 [LOCAL] `{line.strip()}`")
-                        if len(encontrados) >= 30: break
-
-    # 2. RASTREO REAL EN FUENTES DE LEAKS (Scraping de Dumps Públicos)
-    # Utilizamos un motor de búsqueda que filtra resultados de sitios de "Paste" donde se suben leaks
+    # 2. Construcción de Google Dorks para el usuario (links directos)
+    # Esto busca correos y teléfonos indexados en la web
+    dork_link = f"https://www.google.com/search?q=site:{target}+%22@gmail.com%22+OR+%22@{target}%22+OR+%22tel:%22"
+    
     try:
-        # Buscamos patrones reales de emails y passwords asociados al dominio
-        search_url = f"https://www.google.com/search?q=site:pastebin.com OR site:github.com + \"{query}\" + \"password\""
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(search_url, headers=headers, timeout=5)
+        res = requests.get(url_netlas, headers=headers).json()
+        items = res.get('items', [])
         
-        # Extraer posibles correos:pass con expresiones regulares del contenido web
-        raw_leaks = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:[a-zA-Z0-9._%-]+', response.text)
+        mensaje = f"🔥 *INTELIGENCIA DE DATOS: {target}*\n\n"
         
-        for leak in raw_leaks:
-            if query in leak:
-                encontrados.append(f"🌐 [WEB-LEAK] `{leak}`")
-    except Exception as e:
-        print(f"Error en Scraper: {e}")
-
-    # 3. RESPUESTA AL USUARIO
-    if encontrados:
-        res_msg = f"🔥 *REGISTROS ENCONTRADOS:* `{query.upper()}`\n\n"
-        # Eliminar duplicados y unir
-        for item in list(set(encontrados))[:40]: 
-            res_msg += f"{item}\n\n"
-        
-        if len(res_msg) > 4096:
-            for x in range(0, len(res_msg), 4096):
-                await update.message.reply_text(res_msg[x:x+4096], parse_mode="Markdown")
+        if items:
+            mensaje += "📂 *ARCHIVOS SENSIBLES / LOGINS HALLADOS:*\n"
+            for i in items[:10]:
+                uri = i.get('data', {}).get('uri', 'N/A')
+                mensaje += f"• `{uri}`\n"
         else:
-            await update.message.reply_text(res_msg, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(f"❌ No se hallaron credenciales activas en Clearnet o Base Local para `{query}`.")
+            mensaje += "⚠️ No se hallaron archivos `.env` o `.xls` abiertos en Netlas.\n"
+
+        mensaje += f"\n📱 *BÚSQUEDA DE CORREOS Y TELÉFONOS:*\n"
+        mensaje += f"[Haz clic aquí para ver Leaks de {target} en Google]({dork_link})\n\n"
+        
+        mensaje += "💡 *CONSEJO:* Revisa los resultados de Google para encontrar archivos 'Pass.txt' o 'Contactos.xlsx' que no fueron bloqueados por el firewall."
+
+        await update.message.reply_text(mensaje, parse_mode="Markdown", disable_web_page_preview=True)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error en búsqueda web: {str(e)}")
     
     return ConversationHandler.END
    
