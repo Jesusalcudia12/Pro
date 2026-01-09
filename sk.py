@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import httpx
 import requests
 import nmap
 import urllib.parse
@@ -291,6 +292,45 @@ async def handle_docs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_file = await context.bot.get_file(doc.file_id)
         await new_file.download_to_drive(path)
         await update.message.reply_text(f"✅ Base de datos actualizada con: `{doc.file_name}`.")
+async def check_security(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target = context.args[0] if context.args else None
+    
+    if not target:
+        await update.message.reply_text("❌ Uso: `/check_security dominio.com`")
+        return
+
+    if not target.startswith("http"):
+        target = f"https://{target}"
+
+    await update.message.reply_text(f"🛡️ Analizando protecciones de inyección en `{target}`...")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            response = await client.get(target)
+            headers = response.headers
+            
+            # Analizamos las defensas contra WebInjects
+            csp = headers.get("Content-Security-Policy", "⚠️ No detectada")
+            xfo = headers.get("X-Frame-Options", "⚠️ No detectada")
+            hsts = headers.get("Strict-Transport-Security", "⚠️ No detectada")
+
+            reporte = (
+                f"📊 *REPORTE DE SEGURIDAD PARA:* {target}\n\n"
+                f"🔹 *CSP (Evita XSS/Inyecciones):*\n`{csp[:100]}...`\n\n"
+                f"🔹 *X-Frame-Options (Evita iFrames falsos):*\n`{xfo}`\n\n"
+                f"🔹 *HSTS (Fuerza HTTPS):*\n`{hsts}`\n\n"
+            )
+
+            # Evaluación de riesgo
+            if "⚠️" in reporte:
+                reporte += "🔴 *VULNERABLE:* El sitio no tiene protecciones modernas contra WebInjects o Clickjacking."
+            else:
+                reporte += "🟢 *PROTEGIDO:* El sitio tiene políticas activas para bloquear scripts externos."
+
+            await update.message.reply_text(reporte, parse_mode="Markdown")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al conectar: {str(e)}")
 
 # --- MAIN ---
 if __name__ == '__main__':
@@ -319,6 +359,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("upload_combo", upload_combo))
     app.add_handler(conv_handler)
     app.add_handler(MessageHandler(filters.Document.ALL, handle_docs))
+    app.add_handler(CommandHandler("check_security", check_security))
     
     print("Zenith Titan v73.0 Online...")
     app.run_polling()
