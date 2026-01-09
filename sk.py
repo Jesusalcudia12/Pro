@@ -154,13 +154,11 @@ async def cmd_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ip = update.message.text.strip()
-    await update.message.reply_text(f"🎯 *Iniciando Auditoría Profunda en {ip}...*\nEsto puede tardar unos minutos (Escaneo de Vulnerabilidades Real).")
+    await update.message.reply_text(f"🎯 *Iniciando Auditoría Profunda en {ip}...*\nEste proceso es exhaustivo. Por favor, espera.")
     
     nm = nmap.PortScanner()
     try:
-        # -sV: Detecta versiones de servicios
-        # --script vuln: Ejecuta scripts de detección de vulnerabilidades reales
-        # -T4: Aumenta la velocidad del escaneo
+        # Escaneo real con detección de versiones y vulnerabilidades
         nm.scan(ip, arguments='-sV -T4 --script vuln')
         
         results = []
@@ -173,38 +171,52 @@ async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ports = nm[host][proto].keys()
                 for port in ports:
                     srv = nm[host][proto][port]
-                    state = srv['state']
                     product = srv.get('product', 'Desconocido')
                     version = srv.get('version', '')
                     
-                    linea_servicio = f"Puerto {port}/{proto}: {state.upper()} | {product} {version}"
-                    results.append(linea_servicio)
+                    linea = f"Puerto {port}/{proto}: {srv['state'].upper()} | {product} {version}"
+                    results.append(linea)
                     
-                    # Extraer scripts de vulnerabilidad (Aquí está la "magia" real)
                     if 'script' in srv:
                         for script_id, output in srv['script'].items():
                             results.append(f"   ⚠️ VULN DETECTADA [{script_id}]:")
-                            # Limpiar output largo
-                            clean_output = output[:500] + "..." if len(output) > 500 else output
-                            results.append(f"   {clean_output}")
+                            # LIMPIEZA DE CARACTERES: Reemplaza cualquier caracter no compatible para evitar el error 'latin-1'
+                            clean_output = output.encode('ascii', 'ignore').decode('ascii')
+                            results.append(f"   {clean_output[:400]}")
                     results.append("")
 
         if not results:
-            await update.message.reply_text("❌ El host parece estar caído o bloquea los pings.")
+            await update.message.reply_text("❌ No se obtuvieron resultados. Verifica la IP.")
             return ConversationHandler.END
 
-        # Generar PDF con los hallazgos reales
-        pdf_name = f"VULN_REPORT_{ip.replace('.', '_')}.pdf"
-        generate_pdf(pdf_name, results, f"REPORTE TÉCNICO DE VULNERABILIDADES: {ip}")
+        # Generar PDF seguro contra errores de codificación
+        pdf_name = f"VULN_REAL_{ip.replace('.', '_')}.pdf"
+        
+        # Ajuste interno de PDF para ignorar caracteres fallidos
+        pdf = PDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, f"AUDITORIA TECNICA: {ip}", 0, 1)
+        pdf.ln(5)
+        pdf.set_font("Arial", size=9)
+        
+        for r in results:
+            # Forzamos que cada línea sea compatible con el PDF
+            safe_text = r.encode('latin-1', 'ignore').decode('latin-1')
+            pdf.multi_cell(0, 6, txt=safe_text)
+            
+        pdf.output(pdf_name)
         
         await update.message.reply_document(
             document=open(pdf_name, 'rb'), 
-            caption=f"📊 *Auditoría Finalizada para {ip}*\n\nSe han analizado servicios y scripts de explotación. Revisa el PDF para ver los CVEs hallados."
+            caption=f"📊 *Auditoría Real Finalizada*\nIP: {ip}\n\nRevisa el reporte para hallar CVEs y fallos de configuración."
         )
         os.remove(pdf_name)
         
     except Exception as e:
-        await update.message.reply_text(f"❌ Error técnico en el motor Nmap: {e}")
+        # Imprime el error exacto en consola para debug y avisa al usuario
+        print(f"DEBUG ERROR: {e}")
+        await update.message.reply_text(f"❌ Error en el motor: {str(e)}")
     
     return ConversationHandler.END
 
