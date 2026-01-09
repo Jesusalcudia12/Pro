@@ -210,8 +210,8 @@ async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Mejora: Se agregan los scripts NSE personalizados que instalaste en Termux
         # vuln: escaneo general, http-dombased-xss: el script de JS, http-stored-xss: el de formularios
-        argumentos = '-sV -T4 --script vuln,http-dombased-xss.nse,http-stored-xss.nse'
-        nm.scan(ip, arguments=argumentos)
+        args_scan = '-p80,443 -sV -T4 --max-retries 1 --script-timeout 20s --script http-dombased-xss.nse,http-stored-xss.nse'
+        nm.scan(ip, arguments=args_scan)
         
         results = []
         for host in nm.all_hosts():
@@ -292,7 +292,7 @@ async def handle_docs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- MAIN ---
 if __name__ == '__main__':
-    app = Application.builder().token(TOKEN_TELEGRAM).build()
+    app = Application.builder().token(TOKEN_TELEGRAM).read_timeout(30).write_timeout(30).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
