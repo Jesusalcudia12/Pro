@@ -73,29 +73,59 @@ async def cmd_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proc_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = update.message.text.strip()
-    await update.message.reply_text(f"🛰 *Escaneando infraestructura de:* `{target}`...")
+    await update.message.reply_text(f"🛰 *Escaneando infraestructura y archivos sensibles en:* `{target}`...")
+    
     headers = {'X-API-Key': API_NETLAS}
-    url = f"https://app.netlas.io/api/domains/?q=domain:*.{target}"
+    url_netlas = f"https://app.netlas.io/api/domains/?q=domain:*.{target}"
+    
+    # Lista de archivos críticos a buscar
+    critical_files = [
+        "/.env", "/.git/config", "/phpinfo.php", "/wp-config.php.bak", 
+        "/.htaccess", "/config.json", "/admin/.htpasswd", "/.ssh/id_rsa"
+    ]
+    
     try:
-        res = requests.get(url, headers=headers).json()
+        res = requests.get(url_netlas, headers=headers).json()
         items = res.get('items', [])
         
         if not items:
-            await update.message.reply_text("❌ No se encontraron resultados en Netlas.")
+            await update.message.reply_text("❌ No se hallaron subdominios.")
             return ConversationHandler.END
 
-        mensaje = f"🌐 *RUTAS E IPS HALLADAS PARA:* `{target}`\n\n"
-        for i in items[:30]:
+        mensaje = f"🌐 *INFRAESTRUCTURA HALLADA:* `{target}`\n\n"
+        
+        for i in items[:15]: # Limitamos a los primeros 15 para el análisis de archivos
             domain = i['data'].get('domain', 'N/A')
             ip = i['data'].get('ip', i['data'].get('a', 'Desconocida'))
-            mensaje += f"📍 `{domain}`\n└─ 💻 IP: `{ip}`\n\n"
-        
+            mensaje += f"📍 `{domain}` | IP: `{ip}`\n"
+            
+            # Intentar buscar archivos sensibles en el dominio encontrado
+            # Nota: Solo probamos con el primer archivo de la lista para no ser bloqueados rápido
+            found_secrets = []
+            for path in [critical_files[0], critical_files[1]]: # .env y .git
+                test_url = f"https://{domain}{path}"
+                try:
+                    # Timeout corto para no trabar el bot
+                    r = requests.get(test_url, timeout=2, verify=False)
+                    if r.status_code == 200 and ("DB_PASSWORD" in r.text or "[core]" in r.text):
+                        found_secrets.append(f"🔥 ¡EXPUESTO! -> {path}")
+                except:
+                    continue
+            
+            if found_secrets:
+                for s in found_secrets:
+                    mensaje += f"   └── {s}\n"
+            mensaje += "\n"
+
         if len(mensaje) > 4096:
             for x in range(0, len(mensaje), 4096):
                 await update.message.reply_text(mensaje[x:x+4096], parse_mode="Markdown")
         else:
             await update.message.reply_text(mensaje, parse_mode="Markdown")
-    except: await update.message.reply_text("❌ Error al conectar con Netlas.")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+        
     return ConversationHandler.END
 
 async def cmd_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
