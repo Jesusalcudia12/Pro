@@ -150,17 +150,62 @@ async def cmd_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎯 *Auditoría:* Inserta la IP:")
     return ESPERANDO_BUGS
 
+# Reemplaza solo la función proc_find_bugs en tu script actual
+
 async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ip = update.message.text
+    ip = update.message.text.strip()
+    await update.message.reply_text(f"🎯 *Iniciando Auditoría Profunda en {ip}...*\nEsto puede tardar unos minutos (Escaneo de Vulnerabilidades Real).")
+    
     nm = nmap.PortScanner()
     try:
-        nm.scan(ip, arguments='-F --script vuln')
-        results = [f"Puerto {p}: {nm[host][proto][p]['state']}" for host in nm.all_hosts() for proto in nm[host].all_protocols() for p in nm[host][proto]]
-        pdf_name = f"bugs_{ip}.pdf"
-        generate_pdf(pdf_name, results, f"Auditoría Pro: {ip}")
-        await update.message.reply_document(document=open(pdf_name, 'rb'), caption=f"📊 Reporte de vulnerabilidades para {ip}.")
+        # -sV: Detecta versiones de servicios
+        # --script vuln: Ejecuta scripts de detección de vulnerabilidades reales
+        # -T4: Aumenta la velocidad del escaneo
+        nm.scan(ip, arguments='-sV -T4 --script vuln')
+        
+        results = []
+        for host in nm.all_hosts():
+            results.append(f"HOST: {host} ({nm[host].hostname()})")
+            results.append(f"ESTADO: {nm[host].state().upper()}")
+            results.append("-" * 30)
+            
+            for proto in nm[host].all_protocols():
+                ports = nm[host][proto].keys()
+                for port in ports:
+                    srv = nm[host][proto][port]
+                    state = srv['state']
+                    product = srv.get('product', 'Desconocido')
+                    version = srv.get('version', '')
+                    
+                    linea_servicio = f"Puerto {port}/{proto}: {state.upper()} | {product} {version}"
+                    results.append(linea_servicio)
+                    
+                    # Extraer scripts de vulnerabilidad (Aquí está la "magia" real)
+                    if 'script' in srv:
+                        for script_id, output in srv['script'].items():
+                            results.append(f"   ⚠️ VULN DETECTADA [{script_id}]:")
+                            # Limpiar output largo
+                            clean_output = output[:500] + "..." if len(output) > 500 else output
+                            results.append(f"   {clean_output}")
+                    results.append("")
+
+        if not results:
+            await update.message.reply_text("❌ El host parece estar caído o bloquea los pings.")
+            return ConversationHandler.END
+
+        # Generar PDF con los hallazgos reales
+        pdf_name = f"VULN_REPORT_{ip.replace('.', '_')}.pdf"
+        generate_pdf(pdf_name, results, f"REPORTE TÉCNICO DE VULNERABILIDADES: {ip}")
+        
+        await update.message.reply_document(
+            document=open(pdf_name, 'rb'), 
+            caption=f"📊 *Auditoría Finalizada para {ip}*\n\nSe han analizado servicios y scripts de explotación. Revisa el PDF para ver los CVEs hallados."
+        )
         os.remove(pdf_name)
-    except: await update.message.reply_text("❌ Error en escaneo.")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error técnico en el motor Nmap: {e}")
+    
     return ConversationHandler.END
 
 async def cmd_search_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
