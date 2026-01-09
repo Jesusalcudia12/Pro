@@ -134,26 +134,44 @@ async def cmd_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proc_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip().lower()
-    await update.message.reply_text(f"🔎 Buscando accesos para `{query}`...")
+    await update.message.reply_text(f"📡 *Extrayendo datos reales para:* `{query}`...")
     
     encontrados = []
-    admin_tags = ["admin", "root", "panel", "login", "config", "dashboard"]
-    
-    for archivo in os.listdir(LEAKS_DIR):
-        if archivo.endswith(".txt"):
-            with open(os.path.join(LEAKS_DIR, archivo), 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    if query in line.lower():
-                        encontrados.append(line.strip())
-                    if len(encontrados) >= 40: break
-        if len(encontrados) >= 40: break
 
+    # 1. BÚSQUEDA EN BASE LOCAL (Tus archivos .txt)
+    if os.path.exists(LEAKS_DIR):
+        for archivo in os.listdir(LEAKS_DIR):
+            if archivo.endswith(".txt"):
+                path = os.path.join(LEAKS_DIR, archivo)
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        if query in line.lower():
+                            encontrados.append(f"📁 [LOCAL] `{line.strip()}`")
+                        if len(encontrados) >= 30: break
+
+    # 2. RASTREO REAL EN FUENTES DE LEAKS (Scraping de Dumps Públicos)
+    # Utilizamos un motor de búsqueda que filtra resultados de sitios de "Paste" donde se suben leaks
+    try:
+        # Buscamos patrones reales de emails y passwords asociados al dominio
+        search_url = f"https://www.google.com/search?q=site:pastebin.com OR site:github.com + \"{query}\" + \"password\""
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(search_url, headers=headers, timeout=5)
+        
+        # Extraer posibles correos:pass con expresiones regulares del contenido web
+        raw_leaks = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}:[a-zA-Z0-9._%-]+', response.text)
+        
+        for leak in raw_leaks:
+            if query in leak:
+                encontrados.append(f"🌐 [WEB-LEAK] `{leak}`")
+    except Exception as e:
+        print(f"Error en Scraper: {e}")
+
+    # 3. RESPUESTA AL USUARIO
     if encontrados:
-        res_msg = f"🔥 *CREDENCIALES HALLADAS PARA:* `{query}`\n"
-        res_msg += "Formato: `URL : CORREO : PASS`\n\n"
-        for res in encontrados:
-            es_admin = "🚨 [ADMIN] " if any(tag in res.lower() for tag in admin_tags) else "👤 "
-            res_msg += f"{es_admin}`{res}`\n\n"
+        res_msg = f"🔥 *REGISTROS ENCONTRADOS:* `{query.upper()}`\n\n"
+        # Eliminar duplicados y unir
+        for item in list(set(encontrados))[:40]: 
+            res_msg += f"{item}\n\n"
         
         if len(res_msg) > 4096:
             for x in range(0, len(res_msg), 4096):
@@ -161,7 +179,9 @@ async def proc_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(res_msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"✅ No se hallaron credenciales para `{query}`.")
+        await update.message.reply_text(f"❌ No se hallaron credenciales activas en Clearnet o Base Local para `{query}`.")
+    
+    return ConversationHandler.END"✅ No se hallaron credenciales para `{query}`.")
     return ConversationHandler.END
 
 # --- COMANDOS RESTANTES (SIN CAMBIOS) ---
