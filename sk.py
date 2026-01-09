@@ -204,18 +204,20 @@ async def cmd_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ip = update.message.text.strip()
-    await update.message.reply_text(f"🎯 *Iniciando Auditoría Profunda en {ip}...*\nEste proceso es exhaustivo. Por favor, espera.")
+    await update.message.reply_text(f"🎯 *Iniciando Auditoría Avanzada en {ip}...*\nEscaneando servicios y buscando fallos XSS (DOM/Stored).")
     
     nm = nmap.PortScanner()
     try:
-        # Escaneo real con detección de versiones y vulnerabilidades
-        nm.scan(ip, arguments='-sV -T4 --script vuln')
+        # Mejora: Se agregan los scripts NSE personalizados que instalaste en Termux
+        # vuln: escaneo general, http-dombased-xss: el script de JS, http-stored-xss: el de formularios
+        argumentos = '-sV -T4 --script vuln,http-dombased-xss.nse,http-stored-xss.nse'
+        nm.scan(ip, arguments=argumentos)
         
         results = []
         for host in nm.all_hosts():
             results.append(f"HOST: {host} ({nm[host].hostname()})")
             results.append(f"ESTADO: {nm[host].state().upper()}")
-            results.append("-" * 30)
+            results.append("-" * 35)
             
             for proto in nm[host].all_protocols():
                 ports = nm[host][proto].keys()
@@ -229,42 +231,45 @@ async def proc_find_bugs(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     if 'script' in srv:
                         for script_id, output in srv['script'].items():
-                            results.append(f"   ⚠️ VULN DETECTADA [{script_id}]:")
-                            # LIMPIEZA DE CARACTERES: Reemplaza cualquier caracter no compatible para evitar el error 'latin-1'
+                            # Identificar visualmente si es un hallazgo de los nuevos scripts
+                            tag = "🚨" if "xss" in script_id else "⚠️"
+                            results.append(f"   {tag} DETECTADO [{script_id}]:")
+                            
+                            # LIMPIEZA DE CARACTERES: Vital para Termux y FPDF
                             clean_output = output.encode('ascii', 'ignore').decode('ascii')
-                            results.append(f"   {clean_output[:400]}")
+                            results.append(f"   {clean_output[:500]}") # Aumentamos a 500 caracteres para ver más detalle
                     results.append("")
 
         if not results:
-            await update.message.reply_text("❌ No se obtuvieron resultados. Verifica la IP.")
+            await update.message.reply_text("❌ No se obtuvieron resultados. Verifica que la IP sea correcta.")
             return ConversationHandler.END
 
-        # Generar PDF seguro contra errores de codificación
-        pdf_name = f"VULN_REAL_{ip.replace('.', '_')}.pdf"
-        
-        # Ajuste interno de PDF para ignorar caracteres fallidos
+        # --- GENERACIÓN DEL PDF ---
+        pdf_name = f"VULN_REPORT_{ip.replace('.', '_')}.pdf"
         pdf = PDF()
         pdf.add_page()
         pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, f"AUDITORIA TECNICA: {ip}", 0, 1)
+        pdf.cell(0, 10, f"REPORTE TECNICO DE AUDITORIA: {ip}", 0, 1)
         pdf.ln(5)
         pdf.set_font("Arial", size=9)
         
         for r in results:
-            # Forzamos que cada línea sea compatible con el PDF
-            safe_text = r.encode('latin-1', 'ignore').decode('latin-1')
-            pdf.multi_cell(0, 6, txt=safe_text)
+            # Doble capa de seguridad para la codificación
+            try:
+                safe_text = r.encode('latin-1', 'ignore').decode('latin-1')
+                pdf.multi_cell(0, 6, txt=safe_text)
+            except:
+                continue # Si una línea falla, saltamos a la siguiente
             
         pdf.output(pdf_name)
         
         await update.message.reply_document(
             document=open(pdf_name, 'rb'), 
-            caption=f"📊 *Auditoría Real Finalizada*\nIP: {ip}\n\nRevisa el reporte para hallar CVEs y fallos de configuración."
+            caption=f"📊 *Auditoría Finalizada para {ip}*\n\nSe han analizado vulnerabilidades persistentes, de DOM y servicios expuestos."
         )
         os.remove(pdf_name)
         
     except Exception as e:
-        # Imprime el error exacto en consola para debug y avisa al usuario
         print(f"DEBUG ERROR: {e}")
         await update.message.reply_text(f"❌ Error en el motor: {str(e)}")
     
