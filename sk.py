@@ -181,8 +181,8 @@ async def proc_logins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"❌ No se hallaron credenciales activas en Clearnet o Base Local para `{query}`.")
     
-    return ConversationHandler.END"✅ No se hallaron credenciales para `{query}`.)
     return ConversationHandler.END
+   
 
 # --- COMANDOS RESTANTES (SIN CAMBIOS) ---
 
